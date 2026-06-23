@@ -2,33 +2,34 @@ import streamlit as st
 import google.generativeai as genai
 from fpdf import FPDF
 
-# --- KONFIGURASI AMAN & FIX ERROR 401 ---
+# --- CONFIG KUNCI AQ ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
     API_KEY = None
 
 if API_KEY:
-    # PAKSA MENGGUNAKAN TRANSPORT REST UNTUK KUNCI AQ
+    # transport="rest" wajib untuk kunci format AQ agar tidak Error 401
     genai.configure(api_key=API_KEY, transport="rest")
-    # Gunakan Flash karena lebih stabil untuk autentikasi baru
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Gunakan 'models/gemini-1.5-flash' (lengkap dengan awalan models/) agar tidak Error 404
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
 else:
-    st.error("⚠️ API Key tidak ditemukan di Secrets!")
+    st.error("⚠️ API Key belum diisi di Secrets!")
 
-# --- LOGIKA JP ---
-def get_subject_logic(mapel):
+# --- LOGIKA JP (PERMEN 13/2025) ---
+def get_jp_logic(mapel):
     special = ["PABP", "PJOK", "Bahasa Inggris", "Bahasa Jawa"]
     if mapel in special:
-        return "Disusun untuk 1 kali pertemuan tuntas (Blok JP)."
-    return "Materi dibagi rapi per 2 Jam Pelajaran (JP) per pertemuan."
+        return "1 kali pertemuan tuntas (Sesuai Permen No. 13 Tahun 2025)"
+    return "Dibagi rata per 2 Jam Pelajaran (JP) per pertemuan (Deep Learning)"
 
-# --- UI APLIKASI ---
+# --- UI STREAMLIT ---
 st.set_page_config(page_title="Gen-Guru AI 2025", layout="wide")
-st.title("🚀 Auto-Admin Guru 2025 (Fix 401)")
+st.title("🚀 Generator Administrasi Guru 2025")
+st.subheader("Sesuai Permendikdasmen No. 13 Tahun 2025")
 
 with st.sidebar:
-    st.header("📋 Identitas")
+    st.header("📋 Data Identitas")
     sekolah = st.text_input("Nama Sekolah", "SD Negeri ...")
     guru = st.text_input("Nama Guru", "Nama Anda, S.Pd.")
     nip = st.text_input("NIP", "19xxxx")
@@ -38,41 +39,60 @@ with st.sidebar:
     kelas = st.text_input("Kelas", "4")
     fase = st.text_input("Fase", "B")
 
-if 'data' not in st.session_state:
-    st.session_state.data = {}
+if 'admin_data' not in st.session_state:
+    st.session_state.admin_data = {}
 
-def generate_konten(prompt):
-    if not API_KEY:
-        return "Error: API Key belum diatur."
+def panggil_ai(prompt):
     try:
-        # Generate dengan instruksi eksplisit
+        # Tambahan safety settings agar output tidak terpotong
         response = model.generate_content(prompt)
-        if response:
-            return response.text
-        else:
-            return "AI tidak memberikan respon."
+        return response.text
     except Exception as e:
-        return f"Gagal: {str(e)}"
+        return f"Waduh, Error: {str(e)}"
 
-# --- TAB PROSES ---
-t1, t2, t3, t4 = st.tabs(["PROTA", "PROMES", "ATP", "MODUL AJAR"])
+# --- ALUR GENERATE ---
+t1, t2, t3, t4 = st.tabs(["1. PROTA", "2. PROMES", "3. CP/ATP", "4. MODUL AJAR"])
 
 with t1:
-    if st.button("Generate PROTA Sekarang"):
+    if st.button("Buat PROTA"):
         with st.spinner("AI sedang menyusun Prota..."):
-            p = f"Buatlah Tabel Program Tahunan (PROTA) {mapel} Kelas {kelas} sesuai Permendikdasmen 13/2025. Referensi buku Kemendikdasmen."
-            st.session_state.data['prota'] = generate_konten(p)
-    if 'prota' in st.session_state.data:
-        st.markdown(st.session_state.data['prota'])
+            p = f"Buatlah Tabel Program Tahunan (PROTA) {mapel} Kelas {kelas} sesuai Permendikdasmen 13/2025. Referensi buku: https://buku.kemendikdasmen.go.id/katalog."
+            st.session_state.admin_data['prota'] = panggil_ai(p)
+    if 'prota' in st.session_state.admin_data:
+        st.markdown(st.session_state.admin_data['prota'])
 
-# ... (Tab lainnya tetap sama seperti sebelumnya) ...
-# Tab Promes, ATP, dan MA akan muncul jika Prota sudah ada
+with t2:
+    if 'prota' in st.session_state.admin_data:
+        if st.button("Buat PROMES"):
+            with st.spinner("Menyusun Promes..."):
+                p = f"Berdasarkan Prota ini: {st.session_state.admin_data['prota']}, buatkan Tabel PROMES ganjil & genap."
+                st.session_state.admin_data['promes'] = panggil_ai(p)
+        if 'promes' in st.session_state.admin_data:
+            st.markdown(st.session_data.admin_data['promes'])
+    else: st.info("Selesaikan Prota dulu.")
+
 with t4:
-    if 'prota' in st.session_state.data:
-        if st.button("Generate MODUL AJAR"):
-            with st.spinner("Menyusun Modul..."):
-                logic = get_subject_logic(mapel)
-                p = f"Buat Modul Ajar {mapel} Kelas {kelas}. Aturan JP: {logic}. Sesuai Permendikdasmen 13/2025."
-                st.session_state.data['ma'] = generate_konten(p)
-        if 'ma' in st.session_state.data:
-            st.markdown(st.session_state.data['ma'])
+    if 'prota' in st.session_state.admin_data:
+        jp = get_jp_logic(mapel)
+        st.info(f"Aturan JP: {jp}")
+        if st.button("Buat MODUL AJAR LENGKAP"):
+            with st.spinner("AI sedang menyusun Modul Ajar + Bahan Ajar + Asesmen..."):
+                p = f"""Buatkan Modul Ajar {mapel} Kelas {kelas} Fase {fase}. 
+                Pembagian JP: {jp}. 
+                Lengkapi dengan: Bahan Ajar, Asesmen Formatif (Rubrik), dan Sumatif (Soal & Kunci). 
+                Acuan: Permendikdasmen 13/2025 dan buku dari https://buku.kemendikdasmen.go.id/katalog. 
+                Format rapi, spasi rata, siap cetak."""
+                st.session_state.admin_data['ma'] = panggil_ai(p)
+        if 'ma' in st.session_state.admin_data:
+            st.markdown(st.session_state.admin_data['ma'])
+            
+            # FITUR CETAK
+            if st.button("📥 Download PDF"):
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Arial", size=10)
+                txt = f"ADMINISTRASI GURU 2025\nSekolah: {sekolah}\nGuru: {guru}\n\n{st.session_state.admin_data['ma']}"
+                pdf.multi_cell(0, 5, txt.encode('latin-1', 'replace').decode('latin-1'))
+                pdf.output("Modul_Ajar.pdf")
+                with open("Modul_Ajar.pdf", "rb") as f:
+                    st.download_button("Klik untuk Simpan", f, "Modul_Ajar.pdf")

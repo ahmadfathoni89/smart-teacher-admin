@@ -3,221 +3,183 @@ import google.generativeai as genai
 from fpdf import FPDF
 import re
 
-# --- CONFIGURATION & STYLING ---
-st.set_page_config(page_title="GenGuru AI Pro 2025", page_icon="🎓", layout="wide")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="GenGuru AI Dashboard", layout="wide", page_icon="🎓")
 
-# Custom CSS Premium
+# CSS Dashboard Premium
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Poppins', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .main { background-color: #f0f2f5; }
     
-    .stApp { background-color: #f8fafc; }
-    .main-header {
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-        padding: 40px;
-        border-radius: 20px;
+    /* Hero Header */
+    .hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        padding: 60px;
+        border-radius: 0 0 30px 30px;
         color: white;
         text-align: center;
-        margin-bottom: 30px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        margin: -60px -60px 40px -60px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
-    .stButton>button {
-        background: #2563eb; color: white; border-radius: 10px;
-        font-weight: 600; width: 100%; transition: 0.3s;
-        height: 3em;
-    }
-    .stButton>button:hover { background: #1e40af; transform: translateY(-2px); }
     
-    /* Area Pratinjau Teks */
-    .preview-box {
+    /* Dashboard Cards */
+    .card {
         background: white;
-        padding: 20px;
-        border-radius: 12px;
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
         border: 1px solid #e2e8f0;
-        line-height: 1.6;
+        margin-bottom: 20px;
     }
+    
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; background-color: transparent; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: white;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        padding: 0 20px;
+    }
+    .stTabs [aria-selected="true"] { background-color: #2563eb !important; color: white !important; }
+    
+    /* Button Premium */
+    .stButton>button {
+        background: linear-gradient(to right, #2563eb, #1d4ed8);
+        color: white; border: none; padding: 15px;
+        border-radius: 12px; font-weight: 700; width: 100%;
+        transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .stButton>button:hover { transform: scale(1.02); box-shadow: 0 10px 20px rgba(37,99,235,0.3); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- GOOGLE AI SETUP ---
-try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=API_KEY, transport="rest")
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
-except:
-    st.error("⚠️ API Key tidak ditemukan. Selesaikan setup di Secrets!")
+# --- AI CORE (ANTI-404 LOGIC) ---
+def setup_ai():
+    try:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=API_KEY, transport="rest")
+        
+        # Cari model yang tersedia secara dinamis
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Coba urutan model terbaik
+        for target in ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
+            if target in models:
+                return genai.GenerativeModel(target)
+        return genai.GenerativeModel(models[0])
+    except Exception as e:
+        st.error(f"⚠️ Koneksi Gagal: {str(e)}")
+        return None
 
-# --- PDF GENERATOR ENGINE (STANDAR DINAS) ---
-class RPP_PDF(FPDF):
-    def header(self):
-        if self.page_no() == 1:
-            self.set_font('Arial', 'B', 14)
-            self.set_text_color(30, 58, 138)
-            self.cell(0, 10, self.school_info['nama'].upper(), 0, 1, 'C')
-            self.set_font('Arial', '', 10)
-            self.set_text_color(0, 0, 0)
-            self.cell(0, 5, "TAHUN AJARAN 2025/2026", 0, 1, 'C')
-            self.line(10, 28, 200, 28)
-            self.ln(15)
+model = setup_ai()
 
-    def draw_table(self, header, data):
-        self.set_fill_color(37, 99, 235) # Warna Biru Header
+# --- HELPER PDF ---
+class FormalPDF(FPDF):
+    def draw_table_header(self, title):
+        self.set_fill_color(30, 58, 138)
         self.set_text_color(255, 255, 255)
         self.set_font('Arial', 'B', 10)
-        # Header Tabel
-        self.cell(60, 10, header[0], 1, 0, 'C', 1)
-        self.cell(130, 10, header[1], 1, 1, 'C', 1)
-        
-        # Isi Tabel
+        self.cell(0, 10, title, 1, 1, 'C', 1)
         self.set_text_color(0, 0, 0)
-        self.set_font('Arial', '', 10)
-        for row in data:
-            self.cell(60, 8, row[0], 1)
-            self.cell(130, 8, row[1], 1)
-            self.ln()
 
-# --- HELPER FUNCTIONS ---
-def clean_markdown(text):
-    # Membersihkan karakter markdown agar teks bersih di PDF
-    text = re.sub(r'\*+', '', text)
-    text = re.sub(r'#+', '', text)
-    text = re.sub(r'\|', '', text)
-    return text.strip()
+    def add_row(self, label, value):
+        self.set_font('Arial', 'B', 9)
+        self.cell(60, 8, label, 1, 0, 'L')
+        self.set_font('Arial', '', 9)
+        self.cell(130, 8, value, 1, 1, 'L')
 
 # --- APP UI ---
-st.markdown('<div class="main-header"><h1>🎓 GenGuru AI Pro 2025</h1><p>Revisi: Daftar Mapel Lengkap | Sesuai Permendikdasmen No. 13 Tahun 2025</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero"><h1>🎓 GenGuru Pro Dashboard</h1><p>Versi 3.0: Sistem Administrasi Cerdas & Standar Dinas Pendidikan</p></div>', unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("### 📋 Identitas Sekolah & Guru")
-    nama_sekolah = st.text_input("Nama Sekolah", "SD NEGERI 1 MERDEKA")
-    nama_guru = st.text_input("Nama Guru", "AHMAD FATHONI, S.Pd.")
-    nip = st.text_input("NIP", "19920101 202001 1 001")
-    kepsek = st.text_input("Kepala Sekolah", "DRA. SITI NURJANAH, M.Pd.")
+    st.markdown("### ⚙️ Pengaturan Dokumen")
+    sekolah = st.text_input("Nama Sekolah", "SD NEGERI CIPTA ILMU")
+    guru = st.text_input("Nama Guru", "AHMAD FATHONI, S.Pd.")
+    nip = st.text_input("NIP/NUPTK", "19920101 202001 1 001")
+    kepsek = st.text_input("Kepala Sekolah", "DRA. HJ. SITI AMINAH, M.Pd.")
     
     st.divider()
-    st.markdown("### 📚 Pilihan Mata Pelajaran")
-    # SEKARANG SUDAH KOMPLIT PAK!
-    mapel = st.selectbox("Mata Pelajaran", [
-        "Pendidikan Pancasila (PKN)", 
-        "Bahasa Indonesia", 
-        "Matematika", 
-        "IPAS", 
-        "PABP (Agama)", 
-        "PJOK", 
-        "Bahasa Inggris", 
-        "Bahasa Jawa / Daerah",
-        "Seni Musik",
-        "Seni Rupa",
-        "Seni Tari"
+    mapel = st.selectbox("Mata Pelajaran (Lengkap)", [
+        "Pendidikan Pancasila (PKN)", "Bahasa Indonesia", "Matematika", 
+        "IPAS", "PABP (Agama)", "PJOK", "Bahasa Inggris", 
+        "Seni Musik", "Seni Rupa", "Seni Tari", "Bahasa Jawa/Daerah"
     ])
     kelas = st.text_input("Kelas", "4")
     fase = st.selectbox("Fase", ["A", "B", "C", "D", "E", "F"])
 
-# State Management
-if 'steps' not in st.session_state:
-    st.session_state.steps = {"prota": "", "promes": "", "atp": "", "ma": ""}
+if 'store' not in st.session_state:
+    st.session_state.store = {"prota": "", "ma": ""}
 
-def generate_ai(prompt):
-    full_prompt = f"Tuliskan langsung ke isi dokumen tanpa kata pengantar. Gunakan Bahasa Indonesia formal standar dinas pendidikan. {prompt}"
+def run_gen(prompt):
+    if not model: return "AI Tidak Aktif."
     try:
-        res = model.generate_content(full_prompt)
+        res = model.generate_content(f"Tulis langsung isinya tanpa basa-basi. Format rapi standar dinas. {prompt}")
         return res.text
     except Exception as e:
-        return f"Gagal Generate: {str(e)}"
+        return f"Error: {str(e)}"
 
-# --- WORKFLOW ---
-col_nav, col_content = st.columns([1, 2.5])
+# --- LAYOUT DASHBOARD ---
+c1, c2 = st.columns([1, 2.5])
 
-with col_nav:
-    st.markdown("### 🛠️ Dashboard Kerja")
-    if st.button("🚀 1. Generate PROTA"):
-        with st.spinner("AI sedang merangkum program tahunan..."):
-            st.session_state.steps["prota"] = generate_ai(f"Buat Program Tahunan (PROTA) {mapel} Kelas {kelas} Fase {fase} sesuai kurikulum merdeka 2025 dalam poin-poin bab.")
+with c1:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("### 🛠️ Panel Kontrol")
+    if st.button("📊 GENERATE PROTA"):
+        st.session_state.store["prota"] = run_gen(f"Buat Tabel Prota {mapel} Kelas {kelas} Fase {fase} Kurikulum Merdeka.")
     
-    if st.button("📅 2. Generate PROMES"):
-        if not st.session_state.steps["prota"]: st.warning("Prota belum dibuat.")
-        else:
-            with st.spinner("Menyusun Program Semester..."):
-                st.session_state.steps["promes"] = generate_ai(f"Berdasarkan Prota: {st.session_state.steps['prota']}, buatkan Program Semester (PROMES) ganjil genap.")
+    if st.button("📘 GENERATE MODUL AJAR"):
+        # Logika 2 JP atau 1 Pertemuan Tuntas
+        logic = "1 pertemuan tuntas" if any(x in mapel for x in ["PABP", "PJOK", "Inggris", "Jawa"]) else "bagi per 2 JP per pertemuan"
+        st.session_state.store["ma"] = run_gen(f"Buat Modul Ajar {mapel} Kelas {kelas}. Aturan waktu: {logic}. Lengkap dengan Asesmen & Bahan Ajar.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.button("📘 3. Generate MODUL AJAR (RPP)"):
-        # Logika khusus permintaan User (PABP, PJOK, Inggris, Jawa = 1 Pertemuan Tuntas)
-        is_special = any(x in mapel for x in ["PABP", "PJOK", "Inggris", "Jawa"])
-        logic = "buat 1 modul untuk 1 kali pertemuan utuh (tuntas)" if is_special else "bagi materi per 2 Jam Pelajaran (JP) per pertemuan agar rapi"
-        
-        with st.spinner("Menyusun Modul Ajar (RPP) Lengkap..."):
-            st.session_state.steps["ma"] = generate_ai(f"Buat Modul Ajar {mapel} Kelas {kelas} Fase {fase}. Aturan JP: {logic}. Harus mencakup Profil Pelajar Pancasila, Langkah Pembelajaran, Bahan Ajar, Asesmen Formatif & Sumatif sesuai Permen 13/2025.")
-
-with col_content:
-    tab1, tab2, tab3 = st.tabs(["📄 Pratinjau Dokumen", "📘 RPP (Siap Dinas)", "📥 Cetak PDF"])
+with c2:
+    tab1, tab2 = st.tabs(["📝 Pratinjau Dokumen", "📥 Download PDF"])
     
     with tab1:
-        if st.session_state.steps["prota"]:
-            st.markdown(f"### PROTA {mapel.upper()}")
-            st.markdown(f'<div class="preview-box">{clean_markdown(st.session_state.steps["prota"]).replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+        if st.session_state.store["ma"]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown(f"### Pratinjau Modul Ajar: {mapel}")
+            st.write(st.session_state.store["ma"])
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.image("https://illustrations.popsy.co/blue/creative-writing.svg", width=350)
-            st.info("Klik tombol di kiri untuk mulai men-generate dokumen.")
+            st.info("Silakan pilih tombol di panel kontrol untuk memulai.")
 
     with tab2:
-        if st.session_state.steps["ma"]:
-            st.markdown(f"### MODUL AJAR {mapel.upper()}")
-            st.markdown(f'<div class="preview-box">{clean_markdown(st.session_state.steps["ma"]).replace("\n", "<br>")}</div>', unsafe_allow_html=True)
-        else:
-            st.warning("Silakan generate Modul Ajar terlebih dahulu.")
-
-    with tab3:
-        if st.session_state.steps["ma"]:
-            if st.button("✨ CETAK SEMUA KE PDF"):
-                pdf = RPP_PDF()
-                pdf.school_info = {"nama": nama_sekolah, "guru": nama_guru}
+        if st.session_state.store["ma"]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            if st.button("📑 PROSES KE PDF DINAS"):
+                pdf = FormalPDF()
                 pdf.add_page()
                 
-                # Identitas dalam Tabel (REAL TABLE)
-                identitas = [
-                    ["Mata Pelajaran", mapel],
-                    ["Fase / Kelas", f"{fase} / {kelas}"],
-                    ["Nama Guru", nama_guru],
-                    ["Target Peserta", "Reguler / Tipikal"]
-                ]
-                pdf.draw_table(["KOMPONEN", "KETERANGAN"], identitas)
+                # Header Table
+                pdf.draw_table_header(f"MODUL AJAR / RPP - {mapel.upper()}")
+                pdf.add_row("Satuan Pendidikan", sekolah)
+                pdf.add_row("Nama Penyusun", guru)
+                pdf.add_row("Mata Pelajaran", mapel)
+                pdf.add_row("Kelas / Fase", f"{kelas} / {fase}")
                 
                 pdf.ln(10)
-                pdf.set_font('Arial', 'B', 12)
-                pdf.cell(0, 10, "ISI MODUL AJAR / RPP", 0, 1, 'L')
                 pdf.set_font('Arial', '', 10)
+                # Bersihkan teks dari simbol markdown
+                clean_body = re.sub(r'[*#|_]', '', st.session_state.store["ma"])
+                pdf.multi_cell(0, 6, clean_body)
                 
-                # Konten Bersih
-                isi_rpp = clean_markdown(st.session_state.steps["ma"])
-                pdf.multi_cell(0, 6, isi_rpp)
-                
-                # Tanda Tangan
+                # Signature
                 pdf.ln(20)
-                y_sign = pdf.get_y()
-                pdf.set_font('Arial', '', 10)
-                pdf.set_x(20)
-                pdf.cell(80, 5, "Mengetahui,", 0, 1, 'C')
-                pdf.set_x(20)
-                pdf.cell(80, 5, "Kepala Sekolah,", 0, 0, 'C')
-                
-                pdf.set_xy(110, y_sign)
-                pdf.cell(80, 5, "Semarang, ................. 2025", 0, 1, 'C')
-                pdf.set_x(110)
-                pdf.cell(80, 5, "Guru Mata Pelajaran,", 0, 1, 'C')
-                
+                pdf.cell(90, 5, "Mengetahui,", 0, 0, 'C')
+                pdf.cell(90, 5, "Semarang, ................. 2025", 0, 1, 'C')
+                pdf.cell(90, 5, "Kepala Sekolah", 0, 0, 'C')
+                pdf.cell(90, 5, "Guru Mata Pelajaran,", 0, 1, 'C')
                 pdf.ln(20)
                 pdf.set_font('Arial', 'BU', 10)
-                pdf.set_x(20)
-                pdf.cell(80, 5, kepsek, 0, 0, 'C')
-                pdf.cell(80, 5, nama_guru, 0, 1, 'C')
+                pdf.cell(90, 5, kepsek, 0, 0, 'C')
+                pdf.cell(90, 5, guru, 0, 1, 'C')
                 
-                pdf.set_font('Arial', '', 10)
-                pdf.set_x(20)
-                pdf.cell(80, 5, f"NIP. .........................", 0, 0, 'C')
-                pdf.cell(80, 5, f"NIP. {nip}", 0, 1, 'C')
-                
-                # Output
-                pdf.output("RPP_GenGuru_Final.pdf")
-                with open("RPP_GenGuru_Final.pdf", "rb") as f:
-                    st.download_button("📥 KLIK DISINI UNTUK DOWNLOAD PDF", f, file_name=f"RPP_{mapel}_{kelas}.pdf")
+                pdf.output("RPP_Premium.pdf")
+                with open("RPP_Premium.pdf", "rb") as f:
+                    st.download_button("📥 DOWNLOAD PDF SEKARANG", f, "Administrasi_Guru_Pro.pdf")
+            st.markdown('</div>', unsafe_allow_html=True)
